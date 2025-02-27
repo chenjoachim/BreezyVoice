@@ -263,15 +263,20 @@ class CustomCosyVoice:
             tts_speeches.append(model_output['tts_speech'])
         return {'tts_speech': torch.concat(tts_speeches, dim=1)}
         
-    def inference_zero_shot_no_normalize(self, tts_text, prompt_text, prompt_speech_16k):
+    def inference_zero_shot_no_normalize(self, tts_text, prompt_text, prompt_speech_16k, max_length=-1):
         prompt_text = prompt_text
         tts_speeches = []
+        total_duration = 0
+        target_seconds = max_length * 60 if max_length > 0 else float('inf')
         for i in re.split(r'(?<=[？！。.?!])\s*', tts_text):
             if not len(i):
                 continue
             print("Synthesizing:",i)
             model_input = self.frontend.frontend_zero_shot(i, prompt_text, prompt_speech_16k)
             model_output = self.model.inference(**model_input)
+            output_duration = model_output['tts_speech'].shape[1]/22050
+            if total_duration + output_duration > target_seconds:
+                break
             tts_speeches.append(model_output['tts_speech'])
         return {'tts_speech': torch.concat(tts_speeches, dim=1)}
         
@@ -353,7 +358,7 @@ def parse_transcript(text, end):
     parsed_output = "".join([p[2] for p in parsed_output])
     return parsed_output, start
 
-def single_inference(speaker_prompt_audio_path, content_to_synthesize, output_path, cosyvoice, bopomofo_converter, speaker_prompt_text_transcription=None):
+def single_inference(speaker_prompt_audio_path, content_to_synthesize, output_path, cosyvoice, bopomofo_converter, speaker_prompt_text_transcription=None, max_length=-1):
     prompt_speech_16k = load_wav(speaker_prompt_audio_path, 16000)
     content_to_synthesize = content_to_synthesize
     output_path = output_path.strip()
@@ -381,7 +386,7 @@ def single_inference(speaker_prompt_audio_path, content_to_synthesize, output_pa
     content_to_synthesize_bopomo = get_bopomofo_rare(content_to_synthesize, bopomofo_converter)
     print("Content to be synthesized:",content_to_synthesize_bopomo)
     start = time.time()
-    output = cosyvoice.inference_zero_shot_no_normalize(content_to_synthesize_bopomo, speaker_prompt_text_transcription_bopomo, prompt_speech_16k)
+    output = cosyvoice.inference_zero_shot_no_normalize(content_to_synthesize_bopomo, speaker_prompt_text_transcription_bopomo, prompt_speech_16k, max_length=max_length)
     end = time.time()
     print("Elapsed time:",end - start)
     print("Generated audio length:", output['tts_speech'].shape[1]/22050, "seconds")
@@ -399,6 +404,7 @@ def main():
     
     parser.add_argument("--model_path", type=str, required=False, default = "MediaTek-Research/BreezyVoice-300M",help="Specifies the model used for speech synthesis.")
     parser.add_argument("--content_type", type=str, choices=["file", "text"], default="text", help="Specifies the type of content to be synthesized.")
+    parser.add_argument("--max_length", type=int, default=-1, help="Specifies the maximum length of the synthesized speech in minutes.")
     args = parser.parse_args()
     
     
@@ -413,7 +419,7 @@ def main():
     else:
         content_to_synthesize = args.content_to_synthesize
     output_path = args.output_path.strip()
-    single_inference(speaker_prompt_audio_path, content_to_synthesize, output_path, cosyvoice, bopomofo_converter, args.speaker_prompt_text_transcription)
+    single_inference(speaker_prompt_audio_path, content_to_synthesize, output_path, cosyvoice, bopomofo_converter, args.speaker_prompt_text_transcription, max_length=args.max_length)
 
 if __name__ == "__main__":
     main()
