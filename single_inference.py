@@ -277,7 +277,10 @@ class CustomCosyVoice:
             output_duration = model_output['tts_speech'].shape[1]/22050
             if total_duration + output_duration > target_seconds:
                 break
-            tts_speeches.append(model_output['tts_speech'])
+            else:
+                total_duration += output_duration
+                tts_speeches.append(model_output['tts_speech'])
+            print("Current duration:",total_duration)
         return {'tts_speech': torch.concat(tts_speeches, dim=1)}
         
 ####wav2text
