@@ -107,7 +107,7 @@ class CustomCosyVoiceFrontEnd(CosyVoiceFrontEnd):
 
         if split is False:
             return text
-        return texts
+        return text # Should be texts
     
     def frontend_zero_shot(self, tts_text, prompt_text, prompt_speech_16k):
         tts_text_token, tts_text_token_len = self._extract_text_token(tts_text)
@@ -398,6 +398,7 @@ def main():
     parser.add_argument("--output_path", type=str, required=False, default="results/output.wav", help="Specifies the name and path for the output .wav file.")
     
     parser.add_argument("--model_path", type=str, required=False, default = "MediaTek-Research/BreezyVoice-300M",help="Specifies the model used for speech synthesis.")
+    parser.add_argument("--content_type", type=str, choices=["file", "text"], default="text", help="Specifies the type of content to be synthesized.")
     args = parser.parse_args()
     
     
@@ -406,7 +407,11 @@ def main():
     bopomofo_converter = G2PWConverter()
 
     speaker_prompt_audio_path = args.speaker_prompt_audio_path
-    content_to_synthesize = args.content_to_synthesize
+    if args.content_type == "file":
+        with open(args.content_to_synthesize, "r") as f:
+            content_to_synthesize = f.read()
+    else:
+        content_to_synthesize = args.content_to_synthesize
     output_path = args.output_path.strip()
     single_inference(speaker_prompt_audio_path, content_to_synthesize, output_path, cosyvoice, bopomofo_converter, args.speaker_prompt_text_transcription)
 
