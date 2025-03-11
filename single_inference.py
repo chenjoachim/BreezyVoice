@@ -13,14 +13,14 @@ import whisper
 import opencc
 from hyperpyyaml import load_hyperpyyaml
 from huggingface_hub import snapshot_download
-# from g2pw import G2PWConverter
+from g2pw import G2PWConverter
 
 from cosyvoice.cli.frontend import CosyVoiceFrontEnd
 from cosyvoice.cli.model import CosyVoiceModel
 from cosyvoice.cli.cosyvoice import CosyVoice
 from cosyvoice.utils.file_utils import load_wav
 from cosyvoice.utils.frontend_utils import (contains_chinese, replace_blank, replace_corner_mark,remove_bracket, spell_out_number, split_paragraph)
-# from utils.word_utils import word_to_dataset_frequency, char2phn, always_augment_chars
+from utils.word_utils import word_to_dataset_frequency, char2phn, always_augment_chars
 
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append('{}/third_party/Matcha-TTS'.format(ROOT_DIR))
@@ -299,36 +299,36 @@ def transcribe_audio(audio_file):
     traditional_text = converter.convert(result["text"])
     return traditional_text
 
-# def get_bopomofo_rare(text, converter):
-#     res = converter(text)
-#     text_w_bopomofo = [x for x in zip(list(text), res[0])]
-#     reconstructed_text = ""
+def get_bopomofo_rare(text, converter):
+    res = converter(text)
+    text_w_bopomofo = [x for x in zip(list(text), res[0])]
+    reconstructed_text = ""
     
-#     for i in range(len(text_w_bopomofo)):
-#         t = text_w_bopomofo[i]
-#         try:
-#             next_t_char = text_w_bopomofo[i+1][0]
-#         except:
-#             next_t_char = None
-#         #print(t[0], word_to_dataset_frequency[t[0]], t[1])
+    for i in range(len(text_w_bopomofo)):
+        t = text_w_bopomofo[i]
+        try:
+            next_t_char = text_w_bopomofo[i+1][0]
+        except:
+            next_t_char = None
+        #print(t[0], word_to_dataset_frequency[t[0]], t[1])
         
-#         if word_to_dataset_frequency[t[0]] < 500 and t[1] != None and next_t_char != '[':
-#             # Add the char and the pronunciation
-#             reconstructed_text += t[0] + f"[:{t[1]}]"
+        if word_to_dataset_frequency[t[0]] < 500 and t[1] != None and next_t_char != '[':
+            # Add the char and the pronunciation
+            reconstructed_text += t[0] + f"[:{t[1]}]"
         
-#         elif len(char2phn[t[0]]) >= 2:
-#             if t[1] != char2phn[t[0]][0] and (word_to_dataset_frequency[t[0]] < 10000 or t[0] in always_augment_chars) and next_t_char != '[':  # Not most common pronunciation
-#                 # Add the char and the pronunciation
-#                 reconstructed_text += t[0] + f"[:{t[1]}]"
-#             else:
-#                 reconstructed_text += t[0]
-#             #print("DEBUG, multiphone char", t[0], char2phn[t[0]])
-#         else:
-#             # Add only the char
-#             reconstructed_text += t[0]
+        elif len(char2phn[t[0]]) >= 2:
+            if t[1] != char2phn[t[0]][0] or (word_to_dataset_frequency[t[0]] < 10000 or t[0] in always_augment_chars) and next_t_char != '[':  # Not most common pronunciation
+                # Add the char and the pronunciation
+                reconstructed_text += t[0] + f"[:{t[1]}]"
+            else:
+                reconstructed_text += t[0]
+            #print("DEBUG, multiphone char", t[0], char2phn[t[0]])
+        else:
+            # Add only the char
+            reconstructed_text += t[0]
     
-#     #print("Reconstructed:", reconstructed_text)
-#     return reconstructed_text
+    #print("Reconstructed:", reconstructed_text)
+    return reconstructed_text
 
 import re
 
@@ -382,13 +382,20 @@ def single_inference(speaker_prompt_audio_path, content_to_synthesize, output_pa
         content_to_synthesize, 
         split=False
     )
-    # speaker_prompt_text_transcription_bopomo = get_bopomofo_rare(speaker_prompt_text_transcription, bopomofo_converter)
-    speaker_prompt_text_transcription_bopomo = speaker_prompt_text_transcription
+    speaker_prompt_text_transcription_bopomo = get_bopomofo_rare(speaker_prompt_text_transcription, bopomofo_converter)
+    # speaker_prompt_text_transcription_bopomo = speaker_prompt_text_transcription
     print("Speaker prompt audio transcription:",speaker_prompt_text_transcription_bopomo)
     
+    
+    # Estimate the amount of content to synthesize and give a raw cut
+    if max_length > 0:
+        max_length_word = max_length * 360
+        if max_length_word < len(content_to_synthesize):
+            content_to_synthesize = content_to_synthesize[:max_length_word]     
+            
     #print("Content to be synthesized before bopomofo:",content_to_synthesize)
-    # content_to_synthesize_bopomo = get_bopomofo_rare(content_to_synthesize, bopomofo_converter)
-    content_to_synthesize_bopomo = content_to_synthesize
+    content_to_synthesize_bopomo = get_bopomofo_rare(content_to_synthesize, bopomofo_converter)
+    # content_to_synthesize_bopomo = content_to_s3ynthesize
     print("Content to be synthesized:",content_to_synthesize_bopomo)
     start = time.time()
     output = cosyvoice.inference_zero_shot_no_normalize(content_to_synthesize_bopomo, speaker_prompt_text_transcription_bopomo, prompt_speech_16k, max_length=max_length)
@@ -415,8 +422,8 @@ def main():
     
     cosyvoice = CustomCosyVoice(args.model_path)
 
-    # bopomofo_converter = G2PWConverter()
-    bopomofo_converter = None
+    bopomofo_converter = G2PWConverter()
+    # bopomofo_converter = None
     
 
     speaker_prompt_audio_path = args.speaker_prompt_audio_path
