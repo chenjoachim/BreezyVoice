@@ -15,6 +15,11 @@ from hyperpyyaml import load_hyperpyyaml
 from huggingface_hub import snapshot_download
 from g2pw import G2PWConverter
 
+ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+print(ROOT_DIR)
+sys.path.append(ROOT_DIR)
+sys.path.append('{}/third_party/Matcha-TTS'.format(ROOT_DIR))
+
 from cosyvoice.cli.frontend import CosyVoiceFrontEnd
 from cosyvoice.cli.model import CosyVoiceModel
 from cosyvoice.cli.cosyvoice import CosyVoice
@@ -26,8 +31,7 @@ from utils.word_utils import word_to_dataset_frequency, char2phn, always_augment
 import pydub
 import numpy as np
 
-ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path.append('{}/third_party/Matcha-TTS'.format(ROOT_DIR))
+
 
 ####new normalize
 class CustomCosyVoiceFrontEnd(CosyVoiceFrontEnd):
@@ -304,17 +308,33 @@ class CustomCosyVoice:
                 chunk_id += 1
                 temp_files.append(temp_filename)
                 temp_audio.export(
-                    os.path.join("tmp", f"{task_id}_{chunk_id:02d}.mp3"),
+                    temp_filename,
                     format="mp3", 
                     bitrate="128k", 
                     parameters=["-ac", "1", "-ar", "44100"],
                     codec="libmp3lame"
                 )
+                temp_audio = pydub.AudioSegment.silent(0)
+                unsaved_duration = 0
             
             print("Current duration:",total_duration)
             
             if total_duration > target_seconds:
                 break
+        
+        if unsaved_duration > 0:
+            temp_filename = os.path.join("tmp", f"{task_id}_{chunk_id:02d}.mp3")
+            chunk_id += 1
+            temp_files.append(temp_filename)
+            temp_audio.export(
+                temp_filename,
+                format="mp3", 
+                bitrate="128k", 
+                parameters=["-ac", "1", "-ar", "44100"],
+                codec="libmp3lame"
+            )
+            temp_audio = pydub.AudioSegment.silent(0)
+            unsaved_duration = 0
             
         for file in temp_files:
             segment = pydub.AudioSegment.from_file(file)
@@ -490,6 +510,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
