@@ -22,6 +22,10 @@ from cosyvoice.utils.file_utils import load_wav
 from cosyvoice.utils.frontend_utils import (contains_chinese, replace_blank, replace_corner_mark,remove_bracket, spell_out_number, split_paragraph)
 from utils.word_utils import word_to_dataset_frequency, char2phn, always_augment_chars
 
+
+import pydub
+import numpy as np
+
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append('{}/third_party/Matcha-TTS'.format(ROOT_DIR))
 
@@ -263,10 +267,14 @@ class CustomCosyVoice:
             tts_speeches.append(model_output['tts_speech'])
         return {'tts_speech': torch.concat(tts_speeches, dim=1)}
         
-    def inference_zero_shot_no_normalize(self, tts_text, prompt_text, prompt_speech_16k, max_length=-1):
+    def inference_zero_shot_no_normalize(self, tts_text, prompt_text, prompt_speech_16k, max_length=-1, task_id="12345678")->pydub.AudioSegment:
         prompt_text = prompt_text
-        tts_speeches = []
+        temp_audio = pydub.AudioSegment.silent(duration=0)
+        final_audio = pydub.AudioSegment.silent(duration=0)
         total_duration = 0
+        unsaved_duration = 0
+        chunk_id = 0
+        temp_files = []
         target_seconds = max_length * 60 if max_length > 0 else float('inf')
         for i in re.split(r'(?<=[？！。.?!])\s*', tts_text):
             if not len(i):
@@ -275,13 +283,45 @@ class CustomCosyVoice:
             model_input = self.frontend.frontend_zero_shot(i, prompt_text, prompt_speech_16k)
             model_output = self.model.inference(**model_input)
             output_duration = model_output['tts_speech'].shape[1]/22050
-            if total_duration + output_duration > target_seconds:
-                break
-            else:
-                total_duration += output_duration
-                tts_speeches.append(model_output['tts_speech'])
+            
+            total_duration += output_duration
+            unsaved_duration += output_duration
+            
+            audio_numpy = model_output['tts_speech'].squeeze().cpu().numpy()
+            audio_numpy = (audio_numpy * 32767).astype(np.int16)
+            
+            segment = pydub.AudioSegment(
+                audio_numpy.tobytes(),
+                frame_rate=22050,
+                sample_width=2,
+                channels=1
+            )
+            
+            temp_audio += segment
+                
+            if unsaved_duration > 3 * 60:
+                temp_filename = os.path.join("tmp", f"{task_id}_{chunk_id:02d}.mp3")
+                chunk_id += 1
+                temp_files.append(temp_filename)
+                temp_audio.export(
+                    os.path.join("tmp", f"{task_id}_{chunk_id:02d}.mp3"),
+                    format="mp3", 
+                    bitrate="128k", 
+                    parameters=["-ac", "1", "-ar", "44100"],
+                    codec="libmp3lame"
+                )
+            
             print("Current duration:",total_duration)
-        return {'tts_speech': torch.concat(tts_speeches, dim=1)}
+            
+            if total_duration > target_seconds:
+                break
+            
+        for file in temp_files:
+            segment = pydub.AudioSegment.from_file(file)
+            final_audio += segment
+            os.remove(file)
+            
+        return final_audio
         
 ####wav2text
 def transcribe_audio(audio_file):
@@ -361,7 +401,7 @@ def parse_transcript(text, end):
     parsed_output = "".join([p[2] for p in parsed_output])
     return parsed_output, start
 
-def single_inference(speaker_prompt_audio_path, content_to_synthesize, output_path, cosyvoice, bopomofo_converter, speaker_prompt_text_transcription=None, max_length=-1):
+def single_inference(speaker_prompt_audio_path, content_to_synthesize, output_path, cosyvoice, bopomofo_converter, speaker_prompt_text_transcription=None, max_length=-1, bitrate="128k", sample_rate=44100):
     prompt_speech_16k = load_wav(speaker_prompt_audio_path, 16000)
     content_to_synthesize = content_to_synthesize
     output_path = output_path.strip()
@@ -396,13 +436,26 @@ def single_inference(speaker_prompt_audio_path, content_to_synthesize, output_pa
     #print("Content to be synthesized before bopomofo:",content_to_synthesize)
     content_to_synthesize_bopomo = get_bopomofo_rare(content_to_synthesize, bopomofo_converter)
     # content_to_synthesize_bopomo = content_to_s3ynthesize
+    task_id = os.path.basename(output_path).split(".")[0]
     print("Content to be synthesized:",content_to_synthesize_bopomo)
     start = time.time()
-    output = cosyvoice.inference_zero_shot_no_normalize(content_to_synthesize_bopomo, speaker_prompt_text_transcription_bopomo, prompt_speech_16k, max_length=max_length)
+    output = cosyvoice.inference_zero_shot_no_normalize(content_to_synthesize_bopomo, speaker_prompt_text_transcription_bopomo, prompt_speech_16k, max_length=max_length, task_id=task_id)
     end = time.time()
     print("Elapsed time:",end - start)
-    print("Generated audio length:", output['tts_speech'].shape[1]/22050, "seconds")
-    torchaudio.save(output_path, output['tts_speech'], 22050)
+    # print("Generated audio length:", output['tts_speech'].shape[1]/22050, "seconds")
+    # waveform = output["tts_speech"]
+    # if sample_rate != 22050:
+    #     resampler = torchaudio.transforms.Resample(22050, sample_rate)
+    #     waveform = resampler(waveform)
+    # torchaudio.save(output_path, output['tts_speech'], 22050)
+    
+    output.export(output_path, 
+        format="mp3", 
+        bitrate=bitrate, 
+        parameters=["-ac", "1", "-ar", str(sample_rate)],
+        codec="libmp3lame"
+    )
+    
     print(f"Generated voice saved to {output_path}")
 
 def main():
