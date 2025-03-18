@@ -25,7 +25,7 @@ from cosyvoice.cli.model import CosyVoiceModel
 from cosyvoice.cli.cosyvoice import CosyVoice
 from cosyvoice.utils.file_utils import load_wav
 from cosyvoice.utils.frontend_utils import (contains_chinese, replace_blank, replace_corner_mark,remove_bracket, spell_out_number, split_paragraph)
-from utils.word_utils import word_to_dataset_frequency, char2phn, always_augment_chars
+from utils.word_utils import word_to_dataset_frequency, char2phn, phn2char, always_augment_chars
 
 
 import pydub
@@ -377,9 +377,13 @@ def get_bopomofo_rare(text, converter):
             reconstructed_text += t[0] + f"[:{t[1]}]"
         
         elif len(char2phn[t[0]]) >= 2:
-            if t[1] != char2phn[t[0]][0] or (word_to_dataset_frequency[t[0]] < 10000 or t[0] in always_augment_chars) and next_t_char != '[':  # Not most common pronunciation
-                # Add the char and the pronunciation
-                reconstructed_text += t[0] + f"[:{t[1]}]"
+            if t[1] != char2phn[t[0]][0] and next_t_char != '[':
+                if t[1] in phn2char:
+                    # There is a frequent word with same deterministic pronounciation
+                    reconstructed_text += phn2char[t[1]] + f"[:{t[1]}]"
+                elif (word_to_dataset_frequency[t[0]] < 2000 or t[0] in always_augment_chars) :  # Not most common pronunciation
+                    # Add the char and the pronunciation
+                    reconstructed_text += t[0] + f"[:{t[1]}]"
             else:
                 reconstructed_text += t[0]
             #print("DEBUG, multiphone char", t[0], char2phn[t[0]])
