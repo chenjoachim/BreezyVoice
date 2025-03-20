@@ -59,7 +59,7 @@ class CustomCosyVoiceFrontEnd(CosyVoiceFrontEnd):
                 if not text_is_terminated and not is_last:
                     text = text[:-1]
                 #print(text)
-                text = text.replace("\n", "")
+                #text = text.replace("\n", "。")
                 text = replace_blank(text)
                 text = replace_corner_mark(text)
                 text = text.replace(".", "、")
@@ -280,7 +280,7 @@ class CustomCosyVoice:
         chunk_id = 0
         temp_files = []
         target_seconds = max_length * 60 if max_length > 0 else float('inf')
-        for i in re.split(r'(?<=[？！。.?!])\s*', tts_text):
+        for i in re.split(r'(?<=[？！。.?!]\n)\s*', tts_text):
             if not len(i):
                 continue
             print("Synthesizing:",i)
@@ -323,6 +323,7 @@ class CustomCosyVoice:
                 break
         
         if unsaved_duration > 0:
+            os.makedirs("tmp", exist_ok=True)
             temp_filename = os.path.join("tmp", f"{task_id}_{chunk_id:02d}.mp3")
             chunk_id += 1
             temp_files.append(temp_filename)
