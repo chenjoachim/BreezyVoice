@@ -41,12 +41,12 @@ class CustomCosyVoiceFrontEnd(CosyVoiceFrontEnd):
             # Use regex to find text inside and outside the brackets
             inside_brackets = re.findall(r'\[(.*?)\]', input_string)
             outside_brackets = re.split(r'\[.*?\]', input_string)
-            
+
             # Filter out empty strings from the outside list (result of consecutive brackets)
             outside_brackets = [part for part in outside_brackets if part]
-            
+
             return inside_brackets, outside_brackets
-        
+
         def text_normalize_no_split(text, is_last=False):
             text = text.strip()
             text_is_terminated = text[-1] == "。"
@@ -59,7 +59,7 @@ class CustomCosyVoiceFrontEnd(CosyVoiceFrontEnd):
                 if not text_is_terminated and not is_last:
                     text = text[:-1]
                 #print(text)
-                #text = text.replace("\n", "。")
+                text = text.replace("\n", " ")
                 text = replace_blank(text)
                 text = replace_corner_mark(text)
                 text = text.replace(".", "、")
@@ -68,6 +68,7 @@ class CustomCosyVoiceFrontEnd(CosyVoiceFrontEnd):
                 #print(text)
                 text = remove_bracket(text)
                 #print(text)
+                text = re.sub(r'[「」『』]', '', text)
                 text = re.sub(r'[，,]+$', '。', text)
                 #print(text)
             else:
@@ -77,19 +78,19 @@ class CustomCosyVoiceFrontEnd(CosyVoiceFrontEnd):
                     text = self.en_tn_model.normalize(text)
                 text = spell_out_number(text, self.inflect_parser)
             return text
-        
+
         def join_interleaved(outside, inside):
             # Ensure the number of parts match between outside and inside
             result = []
-            
+
             # Iterate and combine alternating parts
             for o, i in zip(outside, inside):
                 result.append(o + '[' + i + ']')
-            
+
             # Append any remaining part (if outside is longer than inside)
             if len(outside) > len(inside):
                 result.append(outside[-1])
-            
+
             return ''.join(result)
         inside_brackets, outside_brackets = split_by_brackets(text)
         #print("io",inside_brackets, outside_brackets)
@@ -98,10 +99,11 @@ class CustomCosyVoiceFrontEnd(CosyVoiceFrontEnd):
         for n in range(len(outside_brackets)):
             e_out = text_normalize_no_split(outside_brackets[n],is_last = n == len(outside_brackets) - 1)
             outside_brackets[n] = e_out
-            
+            time.sleep(0.05)
+
         text = join_interleaved(outside_brackets, inside_brackets)
         #print()
-            
+
         # if contains_chinese(text):
         #     texts = [i for i in split_paragraph(
         #         text, partial(self.tokenizer.encode, allowed_special=self.allowed_special),
@@ -116,7 +118,7 @@ class CustomCosyVoiceFrontEnd(CosyVoiceFrontEnd):
         if split is False:
             return text
         return text # Should be texts
-    
+
     def frontend_zero_shot(self, tts_text, prompt_text, prompt_speech_16k):
         tts_text_token, tts_text_token_len = self._extract_text_token(tts_text)
         prompt_text_token, prompt_text_token_len = self._extract_text_token(prompt_text)
@@ -131,14 +133,14 @@ class CustomCosyVoiceFrontEnd(CosyVoiceFrontEnd):
                        'prompt_speech_feat': speech_feat, 'prompt_speech_feat_len': speech_feat_len,
                        'llm_embedding': embedding, 'flow_embedding': embedding}
         return model_input
-    
+
     def frontend_zero_shot_dual(self, tts_text, prompt_text, prompt_speech_16k, flow_prompt_text, flow_prompt_speech_16k):
         tts_text_token, tts_text_token_len = self._extract_text_token(tts_text)
         prompt_text_token, prompt_text_token_len = self._extract_text_token(prompt_text)
         flow_prompt_text_token, flow_prompt_text_token_len = self._extract_text_token(flow_prompt_text)
         flow_prompt_speech_22050 = torchaudio.transforms.Resample(orig_freq=16000, new_freq=22050)(flow_prompt_speech_16k)
         speech_feat, speech_feat_len = self._extract_speech_feat(flow_prompt_speech_22050)
-        
+
         flow_speech_token, flow_speech_token_len = self._extract_speech_token(flow_prompt_speech_16k)
         #speech_token, speech_token_len = self._extract_speech_token(prompt_speech_16k)
         speech_token = flow_speech_token.clone()
@@ -190,7 +192,7 @@ class CustomCosyVoiceModel(CosyVoiceModel):
                                               sampling=25,
                                               max_token_text_ratio=30,
                                               min_token_text_ratio=3)
-        
+
         #input()
 
         tts_mel = self.flow.inference(token=tts_speech_token,
@@ -203,19 +205,19 @@ class CustomCosyVoiceModel(CosyVoiceModel):
         tts_speech = self.hift.inference(mel=tts_mel).cpu()
         torch.cuda.empty_cache()
         return {'tts_speech': tts_speech}
-     
+
 ###CosyVoice
 class CustomCosyVoice:
 
     def __init__(self, model_dir):
         #assert os.path.exists(model_dir), f"model path '{model_dir}' not exist, please check the path: pretrained_models/CosyVoice-300M-zhtw"
         instruct = False
-        
+
         if not os.path.exists(model_dir):
             model_dir = snapshot_download(model_dir)
         print("model", model_dir)
         self.model_dir = model_dir
-        
+
         with open('{}/cosyvoice.yaml'.format(model_dir), 'r') as f:
             configs = load_hyperpyyaml(f)
         self.frontend = CustomCosyVoiceFrontEnd(configs['get_tokenizer'],
@@ -252,7 +254,7 @@ class CustomCosyVoice:
             model_output = self.model.inference(**model_input)
             tts_speeches.append(model_output['tts_speech'])
         return {'tts_speech': torch.concat(tts_speeches, dim=1)}
-    
+
     def inference_zero_shot_no_unit_condition_no_normalize(self, tts_text, prompt_text, prompt_speech_16k, flow_prompt_text = None, flow_prompt_speech_16k = None):
         if flow_prompt_text == None:
             flow_prompt_text = prompt_text
@@ -270,7 +272,7 @@ class CustomCosyVoice:
             model_output = self.model.inference(**model_input)
             tts_speeches.append(model_output['tts_speech'])
         return {'tts_speech': torch.concat(tts_speeches, dim=1)}
-        
+
     def inference_zero_shot_no_normalize(self, tts_text, prompt_text, prompt_speech_16k, max_length=-1, task_id="12345678")->pydub.AudioSegment:
         prompt_text = prompt_text
         temp_audio = pydub.AudioSegment.silent(duration=0)
@@ -280,48 +282,48 @@ class CustomCosyVoice:
         chunk_id = 0
         temp_files = []
         target_seconds = max_length * 60 if max_length > 0 else float('inf')
-        for i in re.split(r'(?<=[？！。.?!]\n)\s*', tts_text):
+        for i in re.split(r'(?<=[？！。.?!])\s*', tts_text):
             if not len(i):
                 continue
             print("Synthesizing:",i)
             model_input = self.frontend.frontend_zero_shot(i, prompt_text, prompt_speech_16k)
             model_output = self.model.inference(**model_input)
             output_duration = model_output['tts_speech'].shape[1]/22050
-            
+
             total_duration += output_duration
             unsaved_duration += output_duration
-            
+
             audio_numpy = model_output['tts_speech'].squeeze().cpu().numpy()
             audio_numpy = (audio_numpy * 32767).astype(np.int16)
-            
+
             segment = pydub.AudioSegment(
                 audio_numpy.tobytes(),
                 frame_rate=22050,
                 sample_width=2,
                 channels=1
             )
-            
+
             temp_audio += segment
-                
+
             if unsaved_duration > 3 * 60:
                 temp_filename = os.path.join("tmp", f"{task_id}_{chunk_id:02d}.mp3")
                 chunk_id += 1
                 temp_files.append(temp_filename)
                 temp_audio.export(
                     temp_filename,
-                    format="mp3", 
-                    bitrate="128k", 
+                    format="mp3",
+                    bitrate="128k",
                     parameters=["-ac", "1", "-ar", "44100"],
                     codec="libmp3lame"
                 )
                 temp_audio = pydub.AudioSegment.silent(0)
                 unsaved_duration = 0
-            
+
             print("Current duration:",total_duration)
-            
+
             if total_duration > target_seconds:
                 break
-        
+
         if unsaved_duration > 0:
             os.makedirs("tmp", exist_ok=True)
             temp_filename = os.path.join("tmp", f"{task_id}_{chunk_id:02d}.mp3")
@@ -329,21 +331,21 @@ class CustomCosyVoice:
             temp_files.append(temp_filename)
             temp_audio.export(
                 temp_filename,
-                format="mp3", 
-                bitrate="128k", 
+                format="mp3",
+                bitrate="128k",
                 parameters=["-ac", "1", "-ar", "44100"],
                 codec="libmp3lame"
             )
             temp_audio = pydub.AudioSegment.silent(0)
             unsaved_duration = 0
-            
+
         for file in temp_files:
             segment = pydub.AudioSegment.from_file(file)
             final_audio += segment
             os.remove(file)
-            
+
         return final_audio
-        
+
 ####wav2text
 def transcribe_audio(audio_file):
     #model = whisper.load_model("base")
@@ -364,7 +366,7 @@ def get_bopomofo_rare(text, converter):
     res = converter(text)
     text_w_bopomofo = [x for x in zip(list(text), res[0])]
     reconstructed_text = ""
-    
+
     for i in range(len(text_w_bopomofo)):
         t = text_w_bopomofo[i]
         try:
@@ -372,11 +374,11 @@ def get_bopomofo_rare(text, converter):
         except:
             next_t_char = None
         #print(t[0], word_to_dataset_frequency[t[0]], t[1])
-        
+
         if word_to_dataset_frequency[t[0]] < 500 and t[1] != None and next_t_char != '[':
             # Add the char and the pronunciation
             reconstructed_text += t[0] + f"[:{t[1]}]"
-        
+
         elif len(char2phn[t[0]]) >= 2:
             if t[1] != char2phn[t[0]][0] and next_t_char != '[':
                 if t[1] in phn2char:
@@ -385,14 +387,24 @@ def get_bopomofo_rare(text, converter):
                 elif (word_to_dataset_frequency[t[0]] < 2000 or t[0] in always_augment_chars) :  # Not most common pronunciation
                     # Add the char and the pronunciation
                     reconstructed_text += t[0] + f"[:{t[1]}]"
+                else:
+                    reconstructed_text += t[0]
             else:
                 reconstructed_text += t[0]
             #print("DEBUG, multiphone char", t[0], char2phn[t[0]])
         else:
             # Add only the char
             reconstructed_text += t[0]
-    
+
     #print("Reconstructed:", reconstructed_text)
+    return reconstructed_text
+
+def get_bopomofo(text, converter, chunk_size=30, sleeptime=0.1):
+    chunks = [text[i:i+chunk_size] for i in range(0, len(text), chunk_size)]
+    reconstructed_text = ""
+    for chunk in chunks:
+        reconstructed_text += get_bopomofo_rare(chunk, converter)
+        time.sleep(sleeptime)
     return reconstructed_text
 
 import re
@@ -400,7 +412,7 @@ import re
 def parse_transcript(text, end):
     pattern = r"<\|(\d+\.\d+)\|>([^<]+)<\|(\d+\.\d+)\|>"
     matches = re.findall(pattern, text)
-    
+
     parsed_output = [(float(start), float(end), content.strip()) for start, content,end in matches]
     count0 = 0
     for i in range(len(parsed_output)):
@@ -428,38 +440,38 @@ def parse_transcript(text, end):
 
 def single_inference(speaker_prompt_audio_path, content_to_synthesize, output_path, cosyvoice, bopomofo_converter, speaker_prompt_text_transcription=None, max_length=-1, bitrate="128k", sample_rate=44100):
     prompt_speech_16k = load_wav(speaker_prompt_audio_path, 16000)
-    content_to_synthesize = content_to_synthesize
+    # Estimate the amount of content to synthesize and give a raw cut
+    if max_length > 0:
+        max_length_word = max_length * 360
+        if max_length_word < len(content_to_synthesize):
+            content_to_synthesize = content_to_synthesize[:max_length_word]
     output_path = output_path.strip()
 
     if speaker_prompt_text_transcription:
         speaker_prompt_text_transcription = speaker_prompt_text_transcription
     else:
         speaker_prompt_text_transcription = transcribe_audio(speaker_prompt_audio_path)
-    
-    
-    
+
+
+
     ###normalization
+    print("[DEBUG] Normalizing transcription...")
     speaker_prompt_text_transcription = cosyvoice.frontend.text_normalize_new(
-        speaker_prompt_text_transcription, 
+        speaker_prompt_text_transcription,
         split=False
     )
+    print("[DEBUG] Normalizing content...")
     content_to_synthesize = cosyvoice.frontend.text_normalize_new(
-        content_to_synthesize, 
+        content_to_synthesize,
         split=False
     )
-    speaker_prompt_text_transcription_bopomo = get_bopomofo_rare(speaker_prompt_text_transcription, bopomofo_converter)
+    print("[DEBUG] Finished normalization.")
+    speaker_prompt_text_transcription_bopomo = get_bopomofo(speaker_prompt_text_transcription, bopomofo_converter)
     # speaker_prompt_text_transcription_bopomo = speaker_prompt_text_transcription
     print("Speaker prompt audio transcription:",speaker_prompt_text_transcription_bopomo)
-    
-    
-    # Estimate the amount of content to synthesize and give a raw cut
-    if max_length > 0:
-        max_length_word = max_length * 360
-        if max_length_word < len(content_to_synthesize):
-            content_to_synthesize = content_to_synthesize[:max_length_word]     
-            
+
     #print("Content to be synthesized before bopomofo:",content_to_synthesize)
-    content_to_synthesize_bopomo = get_bopomofo_rare(content_to_synthesize, bopomofo_converter)
+    content_to_synthesize_bopomo = get_bopomofo(content_to_synthesize, bopomofo_converter)
     # content_to_synthesize_bopomo = content_to_s3ynthesize
     task_id = os.path.basename(output_path).split(".")[0]
     print("Content to be synthesized:",content_to_synthesize_bopomo)
@@ -473,14 +485,14 @@ def single_inference(speaker_prompt_audio_path, content_to_synthesize, output_pa
     #     resampler = torchaudio.transforms.Resample(22050, sample_rate)
     #     waveform = resampler(waveform)
     # torchaudio.save(output_path, output['tts_speech'], 22050)
-    
-    output.export(output_path, 
-        format="mp3", 
-        bitrate=bitrate, 
+
+    output.export(output_path,
+        format="mp3",
+        bitrate=bitrate,
         parameters=["-ac", "1", "-ar", str(sample_rate)],
         codec="libmp3lame"
     )
-    
+
     print(f"Generated voice saved to {output_path}")
 
 def main():
@@ -489,20 +501,20 @@ def main():
     parser.add_argument("--content_to_synthesize", type=str, required=True, help="Specifies the content that will be synthesized into speech.")
     parser.add_argument("--speaker_prompt_audio_path", type=str, required=True, help="Specifies the path to the prompt speech audio file of the speaker.")
     parser.add_argument("--speaker_prompt_text_transcription", type=str, required=False, help="Specifies the transcription of the speaker prompt audio (Highly Recommended, if not provided, the system will fall back to transcribing with Whisper.)")
-    
+
     parser.add_argument("--output_path", type=str, required=False, default="results/output.wav", help="Specifies the name and path for the output .wav file.")
-    
+
     parser.add_argument("--model_path", type=str, required=False, default = "MediaTek-Research/BreezyVoice-300M",help="Specifies the model used for speech synthesis.")
     parser.add_argument("--content_type", type=str, choices=["file", "text"], default="text", help="Specifies the type of content to be synthesized.")
     parser.add_argument("--max_length", type=int, default=-1, help="Specifies the maximum length of the synthesized speech in minutes.")
     args = parser.parse_args()
-    
-    
+
+
     cosyvoice = CustomCosyVoice(args.model_path)
 
     bopomofo_converter = G2PWConverter()
     # bopomofo_converter = None
-    
+
 
     speaker_prompt_audio_path = args.speaker_prompt_audio_path
     if args.content_type == "file":
@@ -515,8 +527,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
