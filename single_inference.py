@@ -282,29 +282,70 @@ class CustomCosyVoice:
         chunk_id = 0
         temp_files = []
         target_seconds = max_length * 60 if max_length > 0 else float('inf')
+        THRESHOLD = 50  # Adjust this value based on your needs
+
         for i in re.split(r'(?<=[？！。.?!])\s*', tts_text):
             if not len(i):
                 continue
-            print("Synthesizing:",i)
-            model_input = self.frontend.frontend_zero_shot(i, prompt_text, prompt_speech_16k)
-            model_output = self.model.inference(**model_input)
-            output_duration = model_output['tts_speech'].shape[1]/22050
-
-            total_duration += output_duration
-            unsaved_duration += output_duration
-
-            audio_numpy = model_output['tts_speech'].squeeze().cpu().numpy()
-            audio_numpy = (audio_numpy * 32767).astype(np.int16)
-
-            segment = pydub.AudioSegment(
-                audio_numpy.tobytes(),
-                frame_rate=22050,
-                sample_width=2,
-                channels=1
-            )
-
-            temp_audio += segment
-
+            
+            # If sentence is longer than threshold, split by commas
+            if len(i) >= THRESHOLD:
+                comma_splits = re.split(r'(?<=，|,)\s*', i)
+                sub_sentences = [comma_splits[0]]
+                for split in comma_splits[1:]:
+                    if len(sub_sentences[-1]) + len(split) < THRESHOLD:
+                        sub_sentences[-1] += split
+                    else:
+                        if sub_sentences[-1].endswith(('，', ',')):
+                            sub_sentences[-1] = sub_sentences[-1][:-1] + "。"
+                        else:
+                            sub_sentences[-1] = sub_sentences[-1] + "。"
+                        sub_sentences.append(split)
+                for sub_sentence in sub_sentences:
+                    if not len(sub_sentence):
+                        continue
+                    # print("Synthesizing:", sub_sentence)
+                    model_input = self.frontend.frontend_zero_shot(sub_sentence, prompt_text, prompt_speech_16k)
+                    model_output = self.model.inference(**model_input)
+                    output_duration = model_output['tts_speech'].shape[1]/22050
+                    
+                    total_duration += output_duration
+                    unsaved_duration += output_duration
+                    
+                    audio_numpy = model_output['tts_speech'].squeeze().cpu().numpy()
+                    audio_numpy = (audio_numpy * 32767).astype(np.int16)
+                    
+                    segment = pydub.AudioSegment(
+                        audio_numpy.tobytes(),
+                        frame_rate=22050,
+                        sample_width=2,
+                        channels=1
+                    )
+                    
+                    temp_audio += segment
+            else:
+                # Original code for shorter sentences
+                # print("Synthesizing:", i)
+                model_input = self.frontend.frontend_zero_shot(i, prompt_text, prompt_speech_16k)
+                model_output = self.model.inference(**model_input)
+                output_duration = model_output['tts_speech'].shape[1]/22050
+                
+                total_duration += output_duration
+                unsaved_duration += output_duration
+                
+                audio_numpy = model_output['tts_speech'].squeeze().cpu().numpy()
+                audio_numpy = (audio_numpy * 32767).astype(np.int16)
+                
+                segment = pydub.AudioSegment(
+                    audio_numpy.tobytes(),
+                    frame_rate=22050,
+                    sample_width=2,
+                    channels=1
+                )
+                
+                temp_audio += segment
+            
+            # The rest of your code for saving audio segments
             if unsaved_duration > 3 * 60:
                 temp_filename = os.path.join("tmp", f"{task_id}_{chunk_id:02d}.mp3")
                 chunk_id += 1
@@ -318,12 +359,13 @@ class CustomCosyVoice:
                 )
                 temp_audio = pydub.AudioSegment.silent(0)
                 unsaved_duration = 0
-
-            print("Current duration:",total_duration)
-
+            
+            # print("Current duration:", total_duration)
+            
             if total_duration > target_seconds:
                 break
-
+            
+        print("Total duration:", total_duration)
         if unsaved_duration > 0:
             os.makedirs("tmp", exist_ok=True)
             temp_filename = os.path.join("tmp", f"{task_id}_{chunk_id:02d}.mp3")
