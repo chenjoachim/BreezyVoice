@@ -510,13 +510,13 @@ def single_inference(speaker_prompt_audio_path, content_to_synthesize, output_pa
     print("[DEBUG] Finished normalization.")
     speaker_prompt_text_transcription_bopomo = get_bopomofo(speaker_prompt_text_transcription, bopomofo_converter)
     # speaker_prompt_text_transcription_bopomo = speaker_prompt_text_transcription
-    print("Speaker prompt audio transcription:",speaker_prompt_text_transcription_bopomo)
+    # print("Speaker prompt audio transcription:",speaker_prompt_text_transcription_bopomo)
 
     #print("Content to be synthesized before bopomofo:",content_to_synthesize)
     content_to_synthesize_bopomo = get_bopomofo(content_to_synthesize, bopomofo_converter)
     # content_to_synthesize_bopomo = content_to_s3ynthesize
     task_id = os.path.basename(output_path).split(".")[0]
-    print("Content to be synthesized:",content_to_synthesize_bopomo)
+    # print("Content to be synthesized:",content_to_synthesize_bopomo)
     start = time.time()
     output = cosyvoice.inference_zero_shot_no_normalize(content_to_synthesize_bopomo, speaker_prompt_text_transcription_bopomo, prompt_speech_16k, max_length=max_length, task_id=task_id)
     end = time.time()
